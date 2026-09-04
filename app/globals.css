@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+  background: #777978;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #777978;
+}
+
+body {
+  min-height: 100svh;
+}
+
+.site-stage {
+  position: relative;
+  isolation: isolate;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.ascii-horse-background {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+  pointer-events: none;
+  touch-action: none;
+  background: #777978;
+}
+
+.ascii-horse-poster,
+.ascii-horse-video,
+.ascii-webgl-canvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100svh;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ascii-horse-poster {
+  z-index: 0;
+}
+
+.ascii-horse-video {
+  z-index: 1;
+}
+
+.ascii-webgl-canvas {
+  z-index: 2;
+  transition: opacity 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ascii-horse-video,
+  .ascii-webgl-canvas {
+    display: none;
+  }
+}
