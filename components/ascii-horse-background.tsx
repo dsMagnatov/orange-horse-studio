@@ -16,11 +16,18 @@ type AsciiHorseConfig = {
   curlStrength: number;
   distortionStrength: number;
   brightnessStrength: number;
+  videoZoom: number;
+  vignetteStrength: number;
+  vignetteInner: number;
+  vignetteOuter: number;
+  transitionColor: string;
+  finalTransitionColor: string;
+  transitionBand: number;
   characters: string;
 };
 
 const ASCII_HORSE_CONFIG: Readonly<AsciiHorseConfig> = Object.freeze({
-  cellSize: 12,
+  cellSize: 16,
   simulationResolution: 128,
   mouseRadius: 0.2,
   force: 20,
@@ -31,7 +38,14 @@ const ASCII_HORSE_CONFIG: Readonly<AsciiHorseConfig> = Object.freeze({
   curlStrength: 0.243,
   distortionStrength: 0.02,
   brightnessStrength: 0.5,
-  characters: '.,:-+=*#%@',
+  videoZoom: 1.15,
+  vignetteStrength: 0.72,
+  vignetteInner: 0.55,
+  vignetteOuter: 1.35,
+  transitionColor: '#f03017',
+  finalTransitionColor: '#ffffff',
+  transitionBand: 0.22,
+  characters: 'HORSE+-*#=',
 });
 
 const FULLSCREEN_VERTEX_SHADER = /* glsl */ `
@@ -152,6 +166,15 @@ const ASCII_FRAGMENT_SHADER = /* glsl */ `
   uniform float uCharacterCount;
   uniform float uDistortionStrength;
   uniform float uBrightnessStrength;
+  uniform float uVideoZoom;
+  uniform float uVignetteStrength;
+  uniform float uVignetteInner;
+  uniform float uVignetteOuter;
+  uniform vec3 uTransitionColor;
+  uniform vec3 uFinalTransitionColor;
+  uniform float uTransitionBand;
+  uniform float uScrollProgress;
+  uniform float uFinalScrollProgress;
   uniform float uTime;
   varying vec2 vUv;
 
@@ -170,7 +193,7 @@ const ASCII_FRAGMENT_SHADER = /* glsl */ `
       scale.x = viewportAspect / sourceAspect;
     }
 
-    return (screenUv - 0.5) * scale + 0.5;
+    return ((screenUv - 0.5) * scale) / uVideoZoom + 0.5;
   }
 
   float noise(vec2 position) {
@@ -218,6 +241,31 @@ const ASCII_FRAGMENT_SHADER = /* glsl */ `
     float grain = noise(gl_FragCoord.xy + floor(uTime * 24.0)) - 0.5;
     color += grain * 0.047;
     color *= 0.98 + 0.035 * sin(gl_FragCoord.y * 3.14159 / max(uCellSize, 1.0));
+
+    vec2 vignettePosition = (vUv * 2.0 - 1.0) * vec2(0.92, 1.08);
+    float vignette = smoothstep(
+      uVignetteInner,
+      uVignetteOuter,
+      length(vignettePosition)
+    );
+    color *= 1.0 - vignette * uVignetteStrength;
+
+    vec2 transitionGrid = max(ceil(uResolution / uCellSize), vec2(1.0));
+    vec2 transitionCell = floor(gl_FragCoord.xy / uCellSize);
+    float rowProgress = (transitionCell.y + 0.5) / transitionGrid.y;
+    float pixelRandom = noise(transitionCell + vec2(19.17, 73.41));
+    float clusterRandom = noise(floor(transitionCell * 0.5) + vec2(117.3, 31.9));
+    float randomOffset = (mix(pixelRandom, clusterRandom, 0.32) - 0.5) * uTransitionBand;
+    float waveOffset = sin(transitionCell.x * 0.37 + pixelRandom * 6.28318) * 0.025;
+    float revealAt = clamp(rowProgress + randomOffset + waveOffset, 0.01, 0.99);
+    float easedScroll = uScrollProgress * uScrollProgress * (3.0 - 2.0 * uScrollProgress);
+    float reveal = step(revealAt, easedScroll);
+    color = mix(color, uTransitionColor, reveal);
+
+    float easedFinalScroll = uFinalScrollProgress * uFinalScrollProgress *
+      (3.0 - 2.0 * uFinalScrollProgress);
+    float finalReveal = step(revealAt, easedFinalScroll);
+    color = mix(color, uFinalTransitionColor, finalReveal);
 
     gl_FragColor = vec4(max(color, vec3(0.0)), 1.0);
   }
@@ -309,6 +357,7 @@ export function AsciiHorseBackground() {
     video.playsInline = true;
 
     if (reducedMotion) {
+      container.dataset.webgl = 'reduced';
       video.pause();
       return;
     }
@@ -327,6 +376,7 @@ export function AsciiHorseBackground() {
         premultipliedAlpha: false,
       });
     } catch {
+      container.dataset.webgl = 'unavailable';
       return;
     }
 
@@ -336,6 +386,7 @@ export function AsciiHorseBackground() {
     canvas.dataset.effect = 'ascii-fluid-video';
     canvas.style.opacity = '0';
     container.appendChild(canvas);
+    container.dataset.webgl = 'active';
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
@@ -370,7 +421,6 @@ export function AsciiHorseBackground() {
       Math.max(16, Math.round(sourceWidth * videoScale)),
       Math.max(9, Math.round(sourceHeight * videoScale)),
     );
-
     const videoUniforms = {
       uVideo: { value: videoTexture },
     };
@@ -417,6 +467,12 @@ export function AsciiHorseBackground() {
       toneMapped: false,
     });
 
+    const transitionColor = new THREE.Color(
+      ASCII_HORSE_CONFIG.transitionColor,
+    ).convertLinearToSRGB();
+    const finalTransitionColor = new THREE.Color(
+      ASCII_HORSE_CONFIG.finalTransitionColor,
+    ).convertLinearToSRGB();
     const asciiUniforms = {
       uVideo: { value: videoTarget.texture },
       uFluid: { value: fluidReadTarget.texture },
@@ -427,6 +483,15 @@ export function AsciiHorseBackground() {
       uCharacterCount: { value: ASCII_HORSE_CONFIG.characters.length },
       uDistortionStrength: { value: ASCII_HORSE_CONFIG.distortionStrength },
       uBrightnessStrength: { value: ASCII_HORSE_CONFIG.brightnessStrength },
+      uVideoZoom: { value: ASCII_HORSE_CONFIG.videoZoom },
+      uVignetteStrength: { value: ASCII_HORSE_CONFIG.vignetteStrength },
+      uVignetteInner: { value: ASCII_HORSE_CONFIG.vignetteInner },
+      uVignetteOuter: { value: ASCII_HORSE_CONFIG.vignetteOuter },
+      uTransitionColor: { value: transitionColor },
+      uFinalTransitionColor: { value: finalTransitionColor },
+      uTransitionBand: { value: ASCII_HORSE_CONFIG.transitionBand },
+      uScrollProgress: { value: 0 },
+      uFinalScrollProgress: { value: 0 },
       uTime: { value: 0 },
     };
     const asciiMaterial = new THREE.ShaderMaterial({
@@ -494,6 +559,33 @@ export function AsciiHorseBackground() {
     const scheduleResize = () => {
       cancelAnimationFrame(resizeFrame);
       resizeFrame = requestAnimationFrame(resize);
+    };
+
+    const updateScrollProgress = () => {
+      const firstScreenHeight = Math.max(
+        document.querySelector<HTMLElement>('.site-screen--horse')?.offsetHeight ??
+          window.innerHeight,
+        1,
+      );
+      asciiUniforms.uScrollProgress.value = THREE.MathUtils.clamp(
+        window.scrollY / firstScreenHeight,
+        0,
+        1,
+      );
+
+      const finalScreen = document.querySelector<HTMLElement>('.site-screen--white');
+      if (!finalScreen) {
+        asciiUniforms.uFinalScrollProgress.value = 0;
+        return;
+      }
+
+      const finalScreenTop = finalScreen.getBoundingClientRect().top + window.scrollY;
+      const finalTransitionStart = finalScreenTop - window.innerHeight;
+      asciiUniforms.uFinalScrollProgress.value = THREE.MathUtils.clamp(
+        (window.scrollY - finalTransitionStart) / Math.max(window.innerHeight, 1),
+        0,
+        1,
+      );
     };
 
     const setPointer = (clientX: number, clientY: number, timeStamp: number) => {
@@ -590,8 +682,12 @@ export function AsciiHorseBackground() {
 
     resize();
     resizeVideoTarget();
+    updateScrollProgress();
     window.addEventListener('resize', scheduleResize, { passive: true });
+    window.addEventListener('resize', updateScrollProgress, { passive: true });
     window.addEventListener('orientationchange', scheduleResize, { passive: true });
+    window.addEventListener('orientationchange', updateScrollProgress, { passive: true });
+    window.addEventListener('scroll', updateScrollProgress, { passive: true });
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('touchmove', onTouchMove, { passive: true });
     video.addEventListener('loadedmetadata', resizeVideoTarget);
@@ -604,7 +700,10 @@ export function AsciiHorseBackground() {
       cancelAnimationFrame(animationFrame);
       cancelAnimationFrame(resizeFrame);
       window.removeEventListener('resize', scheduleResize);
+      window.removeEventListener('resize', updateScrollProgress);
       window.removeEventListener('orientationchange', scheduleResize);
+      window.removeEventListener('orientationchange', updateScrollProgress);
+      window.removeEventListener('scroll', updateScrollProgress);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('touchmove', onTouchMove);
       video.removeEventListener('loadedmetadata', resizeVideoTarget);
@@ -626,6 +725,7 @@ export function AsciiHorseBackground() {
       renderer.dispose();
       renderer.forceContextLoss();
       canvas.remove();
+      delete container.dataset.webgl;
     };
   }, [reducedMotion]);
 
@@ -634,6 +734,7 @@ export function AsciiHorseBackground() {
       ref={containerRef}
       className="ascii-horse-background"
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
+      data-webgl="initializing"
       aria-hidden="true"
     >
       <Image
