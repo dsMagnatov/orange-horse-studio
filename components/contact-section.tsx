@@ -16,7 +16,7 @@ export function ContactSection() {
       <h2 className="contact-section__title">CONTACT</h2>
 
       <div className="contact-panel">
-        <p className="contact-panel__eyebrow">START A PROJECT</p>
+        <p className="contact-panel__eyebrow">CONTACT US</p>
 
         <form className="contact-form" onSubmit={handleSubmit}>
           <div className="contact-form__grid">
